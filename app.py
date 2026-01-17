@@ -22,6 +22,26 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# ==================== Check for GROQ API Key ====================
+groq_api_key = os.getenv("GROQ_API_KEY")
+if not groq_api_key:
+    st.error("""
+    ❌ **GROQ_API_KEY not found!**
+    
+    **For HuggingFace Space Admins:**
+    1. Go to Space Settings → Variables and secrets
+    2. Click "New secret"
+    3. Add `GROQ_API_KEY` with your Groq API key value
+    4. Restart the Space
+    
+    **For local development:**
+    Create a `.env` file in the project root with:
+    ```
+    GROQ_API_KEY=your_groq_api_key_here
+    ```
+    """)
+    st.stop()
+
 # ==================== Session State ====================
 if "pipeline" not in st.session_state:
     st.session_state.pipeline = None
