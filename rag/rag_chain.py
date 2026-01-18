@@ -106,6 +106,10 @@ class RAGPipeline:
                 - retrieved_chunks: List of relevant chunks
                 - distances: Similarity distances
                 - prompt: Final prompt sent to LLM
+                - relevance_scores: List of relevance scores (1 / (1 + distance))
+                - no_chunks_found: Boolean indicating if retrieval found chunks
+                - query_embedding: The embedding vector of the question
+                - embedding_model: Name of embedding model
         
         Raises:
             ValueError: If pipeline not built
@@ -119,13 +123,32 @@ class RAGPipeline:
         # Step 2: Retrieve relevant chunks
         retrieved_chunks, distances = self.vector_store.search(query_embedding, top_k=top_k)
         
+        # Calculate relevance scores (inverse of distance)
+        relevance_scores = [1.0 / (1.0 + dist) for dist in distances]
+        
+        # Check if we found chunks
+        no_chunks_found = len(retrieved_chunks) == 0 or (len(retrieved_chunks) == 1 and retrieved_chunks[0].strip() == "")
+        
         # Step 3: Build context
         context = "\n\n".join([f"[{i+1}] {chunk}" for i, chunk in enumerate(retrieved_chunks)])
         
-        # Step 4: Create prompt
-        prompt = f"""You are a helpful AI tutor. Answer ONLY using the context below. If the answer is not in the context, say "Not found in document."
+        # Step 4: Create strict prompt with anti-hallucination instructions
+        if no_chunks_found:
+            prompt = f"""You are a helpful AI assistant. The user has asked a question, but no relevant context from their document could be found.
 
-Context:
+Question: {question}
+
+Respond by saying the answer is NOT found in the provided document."""
+        else:
+            prompt = f"""You are a helpful AI assistant answering questions based on provided context.
+
+IMPORTANT RULES:
+1. Answer ONLY using the context provided below
+2. If the answer is not found in the context, explicitly say: "This information is not present in the document."
+3. Do not use any external knowledge or assumptions
+4. If the question is unclear or partially answered by the context, be honest about the limitations
+
+Context from document:
 {context}
 
 Question: {question}
@@ -136,7 +159,7 @@ Answer:"""
         response = self.client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[
-                {"role": "system", "content": "You are a helpful tutor who answers questions using only the provided context."},
+                {"role": "system", "content": "You are a helpful tutor who answers questions using ONLY the provided context. If information is not in the context, say so clearly."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.7,
@@ -149,7 +172,12 @@ Answer:"""
             "answer": answer,
             "retrieved_chunks": retrieved_chunks,
             "distances": distances,
+            "relevance_scores": relevance_scores,
             "prompt": prompt,
+            "no_chunks_found": no_chunks_found,
+            "query_embedding": query_embedding.tolist() if hasattr(query_embedding, 'tolist') else query_embedding,
+            "embedding_model": self.embedding_model.model_name,
+            "embedding_dim": self.embedding_model.get_embedding_dim(),
         }
 
 

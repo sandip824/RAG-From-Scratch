@@ -108,7 +108,10 @@ rag-learning-app/
    streamlit run app.py
    ```
 
-   App opens at `http://localhost:8501`
+   App git clone https://huggingface.co/spaces/YOUR-USERNAME/rag-learning-app
+cd rag-learning-appgit clone https://huggingface.co/spaces/YOUR-USERNAME/rag-learning-app
+cd rag-learning-appgit clone https://huggingface.co/spaces/YOUR-USERNAME/rag-learning-app
+cd rag-learning-appopens at `http://localhost:8501`
 
 ### Testing the App
 
