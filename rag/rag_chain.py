@@ -49,48 +49,36 @@ class RAGPipeline:
         
         Example:
             >>> pipeline = RAGPipeline()
-            >>> metadata = pipeline.build_pipeline(uploaded_file)
-            >>> metadata['num_chunks']
-            25
+            >>> metadata = pipeline.build_pipeline(file)
+            >>> pipeline.is_ready
+            True
         """
-        print(f"\n{'='*50}")
-        print(f"Building RAG Pipeline")
-        print(f"{'='*50}\n")
-        
-        # Step 1: Load file
-        print("[1/4] Loading document...")
+        # Step 1: Load
         self.raw_text = load_file(file)
         print(f"✓ Loaded {len(self.raw_text)} characters")
         
-        # Step 2: Chunk text
-        print("\n[2/4] Chunking text...")
+        # Step 2: Chunk
         self.chunks = chunk_text(self.raw_text, chunk_size=500, overlap=50)
         print(f"✓ Created {len(self.chunks)} chunks")
         
-        # Step 3: Embed chunks
-        print("\n[3/4] Generating embeddings...")
+        # Step 3: Embed
         embeddings = self.embedding_model.embed_chunks(self.chunks)
+        print(f"✓ Generated embeddings (shape: {embeddings.shape})")
         
-        # Step 4: Build index
-        print("\n[4/4] Building vector index...")
+        # Step 4: Index
         self.vector_store.build_index(embeddings, self.chunks)
+        print(f"✓ Built FAISS index")
         
         self.is_ready = True
         
-        metadata = {
-            "filename": file.name,
-            "file_size_bytes": len(self.raw_text),
+        return {
+            "file_name": file.name,
+            "text_length": len(self.raw_text),
             "num_chunks": len(self.chunks),
             "embedding_model": self.embedding_model.model_name,
             "embedding_dim": self.embedding_model.get_embedding_dim(),
-            "index_size": self.vector_store.get_index_size(),
+            "timestamp": str(__import__('datetime').datetime.now()),
         }
-        
-        print(f"\n{'='*50}")
-        print(f"✓ Pipeline Ready!")
-        print(f"{'='*50}\n")
-        
-        return metadata
     
     def ask(self, question: str, top_k: int = 5) -> Dict[str, Any]:
         """
@@ -103,13 +91,14 @@ class RAGPipeline:
         Returns:
             Dict with:
                 - answer: LLM response
-                - retrieved_chunks: List of relevant chunks
+                - retrieved_chunks: List of dicts with 'text' and 'embedding' keys
                 - distances: Similarity distances
                 - prompt: Final prompt sent to LLM
                 - relevance_scores: List of relevance scores (1 / (1 + distance))
                 - no_chunks_found: Boolean indicating if retrieval found chunks
                 - query_embedding: The embedding vector of the question
                 - embedding_model: Name of embedding model
+                - embedding_dim: Dimension of embeddings
         
         Raises:
             ValueError: If pipeline not built
@@ -128,6 +117,27 @@ class RAGPipeline:
         
         # Check if we found chunks
         no_chunks_found = len(retrieved_chunks) == 0 or (len(retrieved_chunks) == 1 and retrieved_chunks[0].strip() == "")
+        
+        # Get chunk embeddings from vector store
+        chunk_embeddings = []
+        retrieved_indices = self.vector_store.index.search(
+            query_embedding.astype('float32').reshape(1, -1), 
+            top_k=top_k
+        )[1][0]
+        
+        for idx in retrieved_indices:
+            idx = int(idx)
+            if idx < len(self.vector_store.embeddings):
+                embedding = self.vector_store.embeddings[idx].tolist()
+                chunk_embeddings.append(embedding)
+            else:
+                chunk_embeddings.append([])
+        
+        # Create retrieved chunks list with embeddings
+        retrieved_chunks_with_embeddings = [
+            {"text": chunk, "embedding": emb} 
+            for chunk, emb in zip(retrieved_chunks, chunk_embeddings)
+        ]
         
         # Step 3: Build context
         context = "\n\n".join([f"[{i+1}] {chunk}" for i, chunk in enumerate(retrieved_chunks)])
@@ -170,7 +180,7 @@ Answer:"""
         
         return {
             "answer": answer,
-            "retrieved_chunks": retrieved_chunks,
+            "retrieved_chunks": retrieved_chunks_with_embeddings,
             "distances": distances,
             "relevance_scores": relevance_scores,
             "prompt": prompt,

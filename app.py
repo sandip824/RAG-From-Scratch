@@ -7,8 +7,13 @@ Built by Sandip Patil | GitHub: github.com/
 import streamlit as st
 import os
 import pandas as pd
+import numpy as np
+import plotly.graph_objects as go
+import plotly.express as px
 from datetime import datetime
 from dotenv import load_dotenv
+from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
 from rag.rag_chain import RAGPipeline
 
 # Load environment variables from .env file
@@ -76,6 +81,11 @@ if "experiment_result_b" not in st.session_state:
     st.session_state.experiment_result_b = None
 if "experiment_question" not in st.session_state:
     st.session_state.experiment_question = ""
+# Vector Embedding Visualization
+if "embedding_cache" not in st.session_state:
+    st.session_state.embedding_cache = {}
+if "visualization_method" not in st.session_state:
+    st.session_state.visualization_method = "PCA"
 
 
 # ==================== Sidebar Controls ====================
@@ -261,7 +271,7 @@ st.markdown('Built by **Sandip Patil** | [GitHub](https://github.com/)')
 st.divider()
 
 # ==================== Main Navigation Tabs ====================
-main_tab1, main_tab2 = st.tabs(["📚 Learn RAG", "🧪 RAG Lab (Experiment)"])
+main_tab1, main_tab2, main_tab3 = st.tabs(["📚 Learn RAG", "🧪 RAG Lab (Experiment)", "🎨 Vector Embedding Visualization"])
 
 with main_tab1:
     # ==================== Main Content ====================
@@ -658,7 +668,7 @@ with main_tab1:
                             st.markdown(f"""
                             <div class="chunk-preview">
                             <b>Chunk {i}</b><br>
-                            {chunk}
+                            {chunk['text'] if isinstance(chunk, dict) else chunk}
                             </div>
                             """, unsafe_allow_html=True)
                         with col_chunk2:
@@ -838,7 +848,7 @@ with main_tab2:
                     st.markdown(f"""
                     <div class="chunk-preview">
                     <b>Chunk {i}</b><br>
-                    {chunk}
+                    {chunk['text'] if isinstance(chunk, dict) else chunk}
                     </div>
                     """, unsafe_allow_html=True)
                 with col_r2:
@@ -865,6 +875,216 @@ with main_tab2:
                 The retrieved chunks are relevant to your question.
                 The answer is grounded in the document content.
                 """)
+
+
+# ==================== Vector Embedding Visualization Tab ====================
+with main_tab3:
+    st.markdown('<div class="section-header">🎨 Vector Embedding Visualization</div>', unsafe_allow_html=True)
+    
+    if not st.session_state.file_uploaded or st.session_state.last_result is None:
+        st.info("📤 Upload a file and ask a question first to visualize embeddings!")
+    else:
+        st.markdown("""
+        Visualize how your documents and questions are represented as embeddings in a high-dimensional space.
+        This shows semantic similarity between chunks and your query.
+        """)
+        
+        viz_col1, viz_col2 = st.columns([2, 1])
+        
+        with viz_col2:
+            st.markdown("### Visualization Settings")
+            visualization_method = st.radio(
+                "Dimensionality Reduction Method",
+                ["PCA", "t-SNE"],
+                help="PCA is faster, t-SNE shows better semantic clusters"
+            )
+            
+            st.markdown("### Color by")
+            color_by = st.radio(
+                "Color encoding",
+                ["Relevance Score", "Chunk Index"],
+                help="Relevance: How similar to query. Chunk Index: Order in document"
+            )
+            
+            show_labels = st.checkbox("Show chunk labels", value=False)
+        
+        with viz_col1:
+            st.markdown("### 2D Embedding Space")
+            
+            try:
+                # Get embeddings from last result
+                query_embedding = np.array(st.session_state.last_result.get("query_embedding", []))
+                retrieved_chunks = st.session_state.last_result.get("retrieved_chunks", [])
+                relevance_scores = st.session_state.last_result.get("relevance_scores", [])
+                
+                if len(query_embedding) == 0 or len(retrieved_chunks) == 0:
+                    st.warning("No embedding data available. Please ask a question first.")
+                else:
+                    # Extract embeddings from chunks
+                    chunk_embeddings = []
+                    chunk_texts = []
+                    chunk_indices = []
+                    
+                    for idx, chunk in enumerate(retrieved_chunks):
+                        if isinstance(chunk, dict) and "embedding" in chunk:
+                            chunk_embeddings.append(chunk["embedding"])
+                            chunk_texts.append(chunk.get("text", "")[:50] + "...")
+                            chunk_indices.append(idx)
+                    
+                    if len(chunk_embeddings) == 0:
+                        st.warning("Chunk embeddings not available. Re-ask your question.")
+                    else:
+                        # Prepare data
+                        all_embeddings = [query_embedding] + chunk_embeddings
+                        labels = ["🔵 Query"] + [f"Chunk {i}" for i in range(len(chunk_embeddings))]
+                        
+                        # Dimensionality reduction
+                        if visualization_method == "PCA":
+                            reducer = PCA(n_components=2, random_state=42)
+                        else:
+                            reducer = TSNE(n_components=2, random_state=42, perplexity=min(3, len(all_embeddings)-1))
+                        
+                        reduced_embeddings = reducer.fit_transform(all_embeddings)
+                        
+                        # Prepare color values
+                        if color_by == "Relevance Score":
+                            colors = [1.0] + relevance_scores[:len(chunk_embeddings)]  # 1.0 for query
+                            color_label = "Relevance Score"
+                            colorscale = "Viridis"
+                        else:
+                            colors = [0] + list(range(1, len(chunk_embeddings) + 1))
+                            color_label = "Chunk Index"
+                            colorscale = "Plasma"
+                        
+                        # Create interactive scatter plot
+                        fig = go.Figure()
+                        
+                        # Add query point (special styling)
+                        fig.add_trace(go.Scatter(
+                            x=[reduced_embeddings[0, 0]],
+                            y=[reduced_embeddings[0, 1]],
+                            mode='markers+text',
+                            marker=dict(
+                                size=20,
+                                color='red',
+                                symbol='star',
+                                line=dict(color='darkred', width=2)
+                            ),
+                            text=['🔴 Your Query'],
+                            textposition="top center",
+                            hovertext=['Your question embedding'],
+                            hoverinfo='text',
+                            name='Query',
+                            showlegend=True
+                        ))
+                        
+                        # Add chunk points
+                        fig.add_trace(go.Scatter(
+                            x=reduced_embeddings[1:, 0],
+                            y=reduced_embeddings[1:, 1],
+                            mode='markers+text' if show_labels else 'markers',
+                            marker=dict(
+                                size=12,
+                                color=colors[1:],
+                                colorscale=colorscale,
+                                showscale=True,
+                                colorbar=dict(title=color_label, thickness=20),
+                                line=dict(color='white', width=1),
+                                opacity=0.8
+                            ),
+                            text=[f"Chunk {i}" for i in range(len(chunk_embeddings))] if show_labels else [''] * len(chunk_embeddings),
+                            textposition="top center",
+                            textfont=dict(size=9),
+                            hovertext=[f"<b>Chunk {i}</b><br>{txt}<br>Relevance: {rel:.2%}" 
+                                      for i, (txt, rel) in enumerate(zip(chunk_texts, relevance_scores[:len(chunk_embeddings)]))],
+                            hoverinfo='text',
+                            name='Retrieved Chunks',
+                            showlegend=True
+                        ))
+                        
+                        # Update layout
+                        fig.update_layout(
+                            title=f"Embedding Space ({visualization_method})",
+                            xaxis_title="Dimension 1",
+                            yaxis_title="Dimension 2",
+                            height=600,
+                            hovermode='closest',
+                            template='plotly_dark',
+                            font=dict(size=11),
+                            plot_bgcolor='rgba(20,20,30,0.8)',
+                            paper_bgcolor='rgba(20,20,30,0.8)',
+                            showlegend=True,
+                            legend=dict(
+                                x=0.02,
+                                y=0.98,
+                                bgcolor='rgba(0,0,0,0.5)',
+                                bordercolor='white',
+                                borderwidth=1
+                            )
+                        )
+                        
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                        # Statistics
+                        st.divider()
+                        st.markdown("### 📊 Embedding Statistics")
+                        
+                        stat_col1, stat_col2, stat_col3, stat_col4 = st.columns(4)
+                        
+                        with stat_col1:
+                            st.metric(
+                                "Total Embeddings",
+                                len(all_embeddings),
+                                "1 Query + Chunks"
+                            )
+                        
+                        with stat_col2:
+                            avg_relevance = np.mean(relevance_scores[:len(chunk_embeddings)]) if len(relevance_scores) > 0 else 0
+                            st.metric(
+                                "Avg Relevance",
+                                f"{avg_relevance:.2%}",
+                                "Semantic similarity"
+                            )
+                        
+                        with stat_col3:
+                            max_relevance = np.max(relevance_scores[:len(chunk_embeddings)]) if len(relevance_scores) > 0 else 0
+                            st.metric(
+                                "Best Match",
+                                f"{max_relevance:.2%}",
+                                "Highest relevance"
+                            )
+                        
+                        with stat_col4:
+                            embedding_dim = len(query_embedding)
+                            st.metric(
+                                "Embedding Dimension",
+                                embedding_dim,
+                                "Vector size"
+                            )
+                        
+                        # Information panel
+                        with st.expander("📖 How to interpret this visualization"):
+                            st.markdown("""
+                            **What you're looking at:**
+                            - 🔴 **Red Star**: Your question (query embedding)
+                            - 🔵 **Blue Dots**: Document chunks retrieved from your file
+                            - **Proximity**: Closer dots have similar meaning
+                            - **Color**: Indicates relevance or chunk order
+                            
+                            **Why it matters:**
+                            - Chunks near your query are more relevant
+                            - Clusters show semantically similar content
+                            - Isolated chunks might contain different topics
+                            - This is how RAG finds relevant context!
+                            
+                            **Dimensionality Reduction:**
+                            - **PCA**: Fast, preserves global structure
+                            - **t-SNE**: Slower, better for finding local clusters
+                            """)
+                        
+            except Exception as e:
+                st.error(f"❌ Error visualizing embeddings: {str(e)}")
+                st.info("Make sure your embeddings were properly generated. Try asking another question.")
 
 
 # ==================== Footer ====================
