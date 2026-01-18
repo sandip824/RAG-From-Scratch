@@ -124,7 +124,7 @@ class RAGPipeline:
         chunk_embeddings = []
         retrieved_indices = self.vector_store.index.search(
             query_embedding.astype('float32').reshape(1, -1), 
-            top_k=top_k
+            top_k
         )[1][0]
         
         for idx in retrieved_indices:
