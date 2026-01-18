@@ -21,4 +21,5 @@ COPY . .
 EXPOSE 7860
 
 # Run Streamlit with XSRF protection disabled (required for HF Spaces file uploads)
-CMD ["streamlit", "run", "app.py", "--server.port=7860", "--server.address=0.0.0.0", "--server.enableXsrfProtection=false"]
+# Use the PORT environment variable set by Spaces to ensure correct binding
+CMD ["bash", "-lc", "streamlit run app.py --server.port=$PORT --server.address=0.0.0.0 --server.enableXsrfProtection=false"]
