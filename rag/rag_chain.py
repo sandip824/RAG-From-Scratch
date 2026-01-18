@@ -74,9 +74,11 @@ class RAGPipeline:
         return {
             "file_name": file.name,
             "text_length": len(self.raw_text),
+            "file_size_bytes": len(self.raw_text),
             "num_chunks": len(self.chunks),
             "embedding_model": self.embedding_model.model_name,
             "embedding_dim": self.embedding_model.get_embedding_dim(),
+            "index_size": self.vector_store.get_index_size(),
             "timestamp": str(__import__('datetime').datetime.now()),
         }
     

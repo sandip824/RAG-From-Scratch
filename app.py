@@ -363,11 +363,11 @@ with main_tab1:
                             st.markdown(f"""
                             <div class="success-box">
                             <b>Pipeline Statistics:</b><br>
-                            📝 File Size: {metadata['file_size_bytes']:,} characters<br>
+                            📝 File Size: {metadata.get('file_size_bytes', metadata.get('text_length', 0)):,} characters<br>
                             🧩 Chunks: {metadata['num_chunks']}<br>
                             🧠 Embedding Model: {metadata['embedding_model']}<br>
                             📐 Embedding Dimension: {metadata['embedding_dim']}<br>
-                            📑 Vector Index Size: {metadata['index_size']}
+                            📑 Vector Index Size: {metadata.get('index_size', 'N/A')}
                             </div>
                             """, unsafe_allow_html=True)
                             
