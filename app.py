@@ -49,6 +49,10 @@ if "file_uploaded" not in st.session_state:
     st.session_state.file_uploaded = False
 if "pipeline_metadata" not in st.session_state:
     st.session_state.pipeline_metadata = None
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+if "last_result" not in st.session_state:
+    st.session_state.last_result = None
 
 
 # ==================== Styling ====================
@@ -95,6 +99,30 @@ st.markdown("""
         font-size: 0.85em;
         color: #666;
         text-align: center;
+    }
+    .chat-user-message {
+        background-color: #FF6B6B;
+        color: white;
+        padding: 1em;
+        border-radius: 0.75em;
+        margin-bottom: 0.5em;
+        max-width: 80%;
+        margin-left: auto;
+        word-wrap: break-word;
+    }
+    .chat-assistant-message {
+        background-color: #E8F5E9;
+        color: #1B5E20;
+        padding: 1em;
+        border-radius: 0.75em;
+        margin-bottom: 0.5em;
+        max-width: 80%;
+        word-wrap: break-word;
+    }
+    .chat-role {
+        font-weight: bold;
+        margin-bottom: 0.25em;
+        font-size: 0.9em;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -215,6 +243,27 @@ if st.session_state.file_uploaded and st.session_state.pipeline:
     st.divider()
     st.markdown('<div class="section-header">💬 Ask Your Document</div>', unsafe_allow_html=True)
     
+    # Display chat history
+    if st.session_state.chat_history:
+        st.markdown("**Conversation History:**")
+        for message in st.session_state.chat_history:
+            if message["role"] == "user":
+                st.markdown(f"""
+                <div class="chat-user-message">
+                <div class="chat-role">🧑 You</div>
+                {message["content"]}
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown(f"""
+                <div class="chat-assistant-message">
+                <div class="chat-role">🤖 Assistant</div>
+                {message["content"]}
+                </div>
+                """, unsafe_allow_html=True)
+        
+        st.divider()
+    
     question = st.text_input(
         "Enter your question:",
         placeholder="What is the document about?",
@@ -231,6 +280,8 @@ if st.session_state.file_uploaded and st.session_state.pipeline:
             st.session_state.pipeline = None
             st.session_state.file_uploaded = False
             st.session_state.pipeline_metadata = None
+            st.session_state.chat_history = []
+            st.session_state.last_result = None
             st.rerun()
     
     if ask_button and question:
@@ -238,44 +289,55 @@ if st.session_state.file_uploaded and st.session_state.pipeline:
             try:
                 result = st.session_state.pipeline.ask(question, top_k=5)
                 
-                # Display answer
-                st.markdown('<div class="section-header">✅ Answer</div>', unsafe_allow_html=True)
-                st.markdown(f"""
-                <div class="success-box">
-                {result['answer']}
-                </div>
-                """, unsafe_allow_html=True)
+                # Add to chat history
+                st.session_state.chat_history.append({
+                    "role": "user",
+                    "content": question
+                })
+                st.session_state.chat_history.append({
+                    "role": "assistant",
+                    "content": result['answer']
+                })
+                st.session_state.last_result = result
                 
-                # Display retrieved chunks
-                with st.expander("📑 Retrieved Chunks (Top 5)", expanded=True):
-                    st.markdown("These are the chunks from your document that were used to generate the answer:")
-                    for i, chunk in enumerate(result['retrieved_chunks'], 1):
-                        st.markdown(f"""
-                        <div class="rag-step">
-                        <b>Chunk {i}</b> (Relevance: {1/(1+result['distances'][i-1]):.1%})<br>
-                        {chunk}
-                        </div>
-                        """, unsafe_allow_html=True)
-                
-                # Display final prompt
-                with st.expander("🤖 Final Prompt Sent to LLM"):
-                    st.code(result['prompt'], language="text")
-                
-                # How it works
-                with st.expander("📖 How RAG Answered Your Question"):
-                    st.markdown("""
-                    1. **Your Question Embedded**: We converted your question into a 384-dimensional vector using sentence-transformers
-                    2. **Similarity Search**: Used FAISS to find the 5 most semantically similar chunks from your document
-                    3. **Context Assembly**: Combined your question with the retrieved chunks
-                    4. **LLM Generation**: Sent the augmented prompt to Llama 3.1 8B via Groq
-                    5. **Answer Retrieved**: The model generated a contextual answer using ONLY the provided context
-                    """)
+                # Rerun to display updated chat history
+                st.rerun()
                 
             except Exception as e:
                 st.error(f"❌ Error processing question: {str(e)}")
     
     elif ask_button and not question:
         st.warning("⚠️ Please enter a question first")
+    
+    # Display details of last result
+    if st.session_state.last_result:
+        st.divider()
+        st.markdown('<div class="section-header">📊 Answer Details</div>', unsafe_allow_html=True)
+        
+        # Display retrieved chunks
+        with st.expander("📑 Retrieved Chunks (Top 5)", expanded=False):
+            st.markdown("These are the chunks from your document that were used to generate the answer:")
+            for i, chunk in enumerate(st.session_state.last_result['retrieved_chunks'], 1):
+                st.markdown(f"""
+                <div class="rag-step">
+                <b>Chunk {i}</b> (Relevance: {1/(1+st.session_state.last_result['distances'][i-1]):.1%})<br>
+                {chunk}
+                </div>
+                """, unsafe_allow_html=True)
+        
+        # Display final prompt
+        with st.expander("🤖 Final Prompt Sent to LLM"):
+            st.code(st.session_state.last_result['prompt'], language="text")
+        
+        # How it works
+        with st.expander("📖 How RAG Answered Your Question"):
+            st.markdown("""
+            1. **Your Question Embedded**: We converted your question into a 384-dimensional vector using sentence-transformers
+            2. **Similarity Search**: Used FAISS to find the 5 most semantically similar chunks from your document
+            3. **Context Assembly**: Combined your question with the retrieved chunks
+            4. **LLM Generation**: Sent the augmented prompt to Llama 3.1 8B via Groq
+            5. **Answer Retrieved**: The model generated a contextual answer using ONLY the provided context
+            """)
 
 
 # ==================== Footer ====================
