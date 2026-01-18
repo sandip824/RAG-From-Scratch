@@ -1,6 +1,4 @@
-# Learn RAG - Chat With Your Documents
-
----
+[---
 title: Learn RAG
 emoji: 🤖
 colorFrom: purple
@@ -11,6 +9,8 @@ python_version: "3.10"
 app_file: app.py
 pinned: false
 ---
+
+# Learn RAG - Chat With Your Documents
 
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.30+-blue)](https://streamlit.io)
 [![Python](https://img.shields.io/badge/Python-3.8+-green)](https://python.org)

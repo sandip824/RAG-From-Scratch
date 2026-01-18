@@ -6,3 +6,6 @@ groq
 numpy
 tqdm
 python-dotenv
+plotly
+scikit-learn
+pandas
